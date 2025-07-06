@@ -204,7 +204,7 @@ DWAPlanner::dwa_planning(const Eigen::Vector3d &goal, std::vector<std::pair<std:
       trajectories.push_back(traj);
     }
 
-    if (dynamic_window.min_yawrate_ < 0.0 && 0.0 < dynamic_window.max_yawrate_)
+    if (dynamic_window.min_yawrate_ < 0.0 && 0.0 < dynamic_window.max_yawrate_) // strgith forward
     {
       std::pair<std::vector<State>, bool> traj;
       traj.first = generate_trajectory(v, 0.0);
@@ -378,9 +378,9 @@ geometry_msgs::Twist DWAPlanner::calc_cmd_vel(void)
   if (M_PI / 4.0 < fabs(angle_to_goal))
     use_speed_cost_ = true;
 
-  if (dist_to_goal_th_ < goal.segment(0, 2).norm() && !has_reached_)
+  if (dist_to_goal_th_ < goal.segment(0, 2).norm() && !has_reached_) // too far
   {
-    if (can_adjust_robot_direction(goal))
+    if (can_adjust_robot_direction(goal)) // if angle error too large, rotate in place
     {
       cmd_vel.angular.z = angle_to_goal > 0 ? std::min(angle_to_goal, max_in_place_yawrate_)
                                             : std::max(angle_to_goal, -max_in_place_yawrate_);
@@ -396,7 +396,7 @@ geometry_msgs::Twist DWAPlanner::calc_cmd_vel(void)
       cmd_vel.angular.z = best_traj.first.front().yawrate_;
     }
   }
-  else
+  else // close enough to goal
   {
     has_reached_ = true;
     if (turn_direction_th_ < fabs(goal[2]))
@@ -415,8 +415,8 @@ geometry_msgs::Twist DWAPlanner::calc_cmd_vel(void)
     trajectories.push_back(best_traj);
   }
 
-  for (int i = 0; i < trajectories_size; i++)
-    trajectories.push_back(trajectories.front());
+  // for (int i = 0; i < trajectories_size; i++)
+  //   trajectories.push_back(trajectories.front());
 
   visualize_trajectory(best_traj.first, selected_trajectory_pub_);
   visualize_trajectories(trajectories, candidate_trajectories_pub_);
@@ -429,7 +429,7 @@ geometry_msgs::Twist DWAPlanner::calc_cmd_vel(void)
 
 bool DWAPlanner::can_adjust_robot_direction(const Eigen::Vector3d &goal)
 {
-  const double angle_to_goal = atan2(goal.y(), goal.x());
+  const double angle_to_goal = atan2(goal.y(), goal.x()); // [-pi, pi]
   if (fabs(angle_to_goal) < angle_to_goal_th_)
     return false;
 
@@ -578,6 +578,9 @@ geometry_msgs::Point DWAPlanner::calc_intersection(
       vector_D << footprint.polygon.points[0].x, footprint.polygon.points[0].y, 0.0;
 
     const double deno = (vector_B - vector_A).cross(vector_D - vector_C).z();
+    if (fabs(deno) < 1e-8) // 加入平行或重合判断
+      continue;
+
     const double s = (vector_C - vector_A).cross(vector_D - vector_C).z() / deno;
     const double t = (vector_B - vector_A).cross(vector_A - vector_C).z() / deno;
 
@@ -598,7 +601,7 @@ geometry_msgs::Point DWAPlanner::calc_intersection(
 
 float DWAPlanner::calc_dist_from_robot(const geometry_msgs::Point &obstacle, const State &state)
 {
-  const geometry_msgs::PolygonStamped footprint = move_footprint(state);
+  const geometry_msgs::PolygonStamped footprint = move_footprint(state); // pose polygon after moving in the current state coorinate
   if (is_inside_of_robot(obstacle, footprint, state))
   {
     return 0.0;
@@ -741,16 +744,32 @@ void DWAPlanner::create_obs_list(const nav_msgs::OccupancyGrid &map)
   {
     for (float dist = 0.0; dist <= max_search_dist; dist += map.info.resolution)
     {
-      geometry_msgs::Pose pose;
-      pose.position.x = dist * cos(angle);
-      pose.position.y = dist * sin(angle);
-      const int index_x = floor((pose.position.x - map.info.origin.position.x) / map.info.resolution);
-      const int index_y = floor((pose.position.y - map.info.origin.position.y) / map.info.resolution);
-
+      geometry_msgs::PoseStamped pose_in_robot_frame;
+      pose_in_robot_frame.header.frame_id = robot_frame_;
+      pose_in_robot_frame.header.stamp = ros::Time::now();
+      pose_in_robot_frame.pose.position.x = dist * cos(angle);
+      pose_in_robot_frame.pose.position.y = dist * sin(angle);
+      // 坐标变换到local_map坐标系
+      geometry_msgs::PoseStamped pose_in_local_map;
+      try
+      {
+        listener_.transformPose(map.header.frame_id, pose_in_robot_frame, pose_in_local_map);
+      }
+      catch (tf::TransformException &ex)
+      {
+        ROS_WARN_THROTTLE(1.0, "TF transform failed in create_obs_list: %s", ex.what());
+        continue;
+      }
+      const int index_x = floor((pose_in_local_map.pose.position.x - map.info.origin.position.x) / map.info.resolution);
+      const int index_y = floor((pose_in_local_map.pose.position.y - map.info.origin.position.y) / map.info.resolution);
       if ((0 <= index_x && index_x < map.info.width) && (0 <= index_y && index_y < map.info.height))
       {
-        if (map.data[index_x + index_y * map.info.width] == 100)
+        if (map.data[index_x + index_y * map.info.width] == 100) // TODO:BUG, 栅格地图不一定100才是障碍物
         {
+          geometry_msgs::Pose pose;
+          pose.position.x = pose_in_robot_frame.pose.position.x;
+          pose.position.y = pose_in_robot_frame.pose.position.y;
+          pose.orientation = pose_in_robot_frame.pose.orientation;
           obs_list_.poses.push_back(pose);
           break;
         }
