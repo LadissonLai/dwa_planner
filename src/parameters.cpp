@@ -39,7 +39,7 @@ void DWAPlanner::load_params(void)
   // - S -
   local_nh_.param<double>("SIM_DIRECTION", sim_direction_, M_PI / 2.0);
   local_nh_.param<double>("SIM_PERIOD", sim_period_, 0.1);
-  local_nh_.param<int>("SIM_TIME_SAMPLES", sim_time_samples_, 10);
+  
   local_nh_.param<double>("SLEEP_TIME_AFTER_FINISH", sleep_time_after_finish_, 0.5);
   local_nh_.param<double>("SLOW_VELOCITY_TH", slow_velocity_th_, 0.1);
   local_nh_.param<double>("SPEED_COST_GAIN", speed_cost_gain_, 0.4);
@@ -47,6 +47,7 @@ void DWAPlanner::load_params(void)
   // - T -
   local_nh_.param<double>("TARGET_VELOCITY", target_velocity_, 0.55);
   local_nh_.param<double>("TO_GOAL_COST_GAIN", to_goal_cost_gain_, 0.8);
+  local_nh_.param<double>("TO_GOAL_ORIENTATION_COST_GAIN", to_goal_orientation_cost_gain_, 0.8);
   local_nh_.param<double>("TURN_DIRECTION_THRESHOLD", turn_direction_th_, 0.1);
   // - U -
   local_nh_.param<bool>("USE_FOOTPRINT", use_footprint_, false);
@@ -59,6 +60,19 @@ void DWAPlanner::load_params(void)
   local_nh_.param<int>("YAWRATE_SAMPLES", yawrate_samples_, 20);
 
   target_velocity_ = std::min(target_velocity_, max_velocity_);
+
+  // ackerman parameters
+  local_nh_.param<int>("STEER_ANGLE_SAMPLES", steer_angle_samples_, 10);
+  local_nh_.param<int>("VELOCITY_SAMPLES", velocity_samples_, 5);
+  local_nh_.param<double>("PREDICT_TIME", predict_time_, 3.0);
+  local_nh_.param<double>("ROBOT_WIDTH", robot_width_, 0.5);
+  local_nh_.param<double>("ROBOT_LENGTH", robot_length_, 0.8);
+  local_nh_.param<double>("WHEELBASE", wheelbase_, 0.5);
+  local_nh_.param<double>("MAX_STEER_ANGLE", max_steer_angle_, 0.5);
+  local_nh_.param<double>("FRONT_OVERHANG", front_overhang_, 0.25);
+  local_nh_.param<double>("REAR_OVERHANG", rear_overhang_, 0.25);
+  local_nh_.param<int>("SIM_TIME_SAMPLES", sim_time_samples_, 10); // 每条轨迹的采样点数
+
 }
 
 void DWAPlanner::print_params(void)
@@ -95,7 +109,7 @@ void DWAPlanner::print_params(void)
   // - S -
   ROS_INFO_STREAM("SIM_DIRECTION: " << sim_direction_);
   ROS_INFO_STREAM("SIM_PERIOD: " << sim_period_);
-  ROS_INFO_STREAM("SIM_TIME_SAMPLES: " << sim_time_samples_);
+  
   ROS_INFO_STREAM("SLEEP_TIME_AFTER_FINISH: " << sleep_time_after_finish_);
   ROS_INFO_STREAM("SLOW_VELOCITY_TH: " << slow_velocity_th_);
   ROS_INFO_STREAM("SPEED_COST_GAIN: " << speed_cost_gain_);
@@ -103,6 +117,7 @@ void DWAPlanner::print_params(void)
   // - T -
   ROS_INFO_STREAM("TARGET_VELOCITY: " << target_velocity_);
   ROS_INFO_STREAM("TO_GOAL_COST_GAIN: " << to_goal_cost_gain_);
+  ROS_INFO_STREAM("TO_GOAL_ORIENTATION_COST_GAIN: " << to_goal_orientation_cost_gain_);
   ROS_INFO_STREAM("TURN_DIRECTION_THRESHOLD: " << turn_direction_th_);
   // - U -
   ROS_INFO_STREAM("USE_FOOTPRINT: " << use_footprint_);
@@ -113,4 +128,18 @@ void DWAPlanner::print_params(void)
   ROS_INFO_STREAM("V_PATH_WIDTH: " << v_path_width_);
   // - Y -
   ROS_INFO_STREAM("YAWRATE_SAMPLES: " << yawrate_samples_);
+
+  // ackerman parameters
+  ROS_INFO_STREAM("+++++++++++++++++++ACKERMAN PARAMS+++++++++++++++++++++++");
+  ROS_INFO_STREAM("STEER_ANGLE_SAMPLES: " << steer_angle_samples_);
+  ROS_INFO_STREAM("VELOCITY_SAMPLES: " << velocity_samples_);
+  ROS_INFO_STREAM("PREDICT_TIME: " << predict_time_);
+  ROS_INFO_STREAM("ROBOT_WIDTH: " << robot_width_);
+  ROS_INFO_STREAM("ROBOT_LENGTH: " << robot_length_);
+  ROS_INFO_STREAM("WHEELBASE: " << wheelbase_);
+  ROS_INFO_STREAM("MAX_STEER_ANGLE: " << max_steer_angle_);
+  ROS_INFO_STREAM("FRONT_OVERHANG: " << front_overhang_);
+  ROS_INFO_STREAM("REAR_OVERHANG: " << rear_overhang_);
+  ROS_INFO_STREAM("SIM_TIME_SAMPLES: " << sim_time_samples_);
+  ROS_INFO_STREAM("+++++++++++++++++++ACKERMAN PARAMS+++++++++++++++++++++++");
 }

@@ -95,6 +95,8 @@ public:
     double max_velocity_;
     double min_yawrate_;
     double max_yawrate_;
+    double min_steer_angle_;
+    double max_steer_angle_;
 
   private:
   };
@@ -135,6 +137,7 @@ public:
 
     float obs_cost_;
     float to_goal_cost_;
+    float to_goal_orientation_cost_;
     float speed_cost_;
     float path_cost_;
     float total_cost_;
@@ -219,6 +222,14 @@ public:
   float calc_to_goal_cost(const std::vector<State> &traj, const Eigen::Vector3d &goal);
 
   /**
+   * @brief Calculate the orientation cost to goal pose
+   * @param traj The estimated trajectory
+   * @param goal The pose of goal
+   * @return The orientation cost to goal pose
+   */
+  float calc_to_goal_orientation_cost(const std::vector<State> &traj, const Eigen::Vector3d &goal);
+
+  /**
    * @brief Calculate the speed cost
    * @param traj The estimated trajectory
    * @return The speed cost
@@ -268,11 +279,29 @@ public:
   float calc_dist_from_robot(const geometry_msgs::Point &obstacle, const State &state);
 
   /**
+   * @brief Calculate the distance from robot footprint to the nearest obstacle
+   * @param obstacle The position of obstacle
+   * @param state The robot state
+   * @param use_ackerman If true, use ackerman model to calculate distance
+   * @return The distance from robot footprint to the nearest obstacle
+   */
+  float calc_dist_from_robot(const geometry_msgs::Point &obstacle, const State &state, bool use_ackerman);
+
+  /**
    * @brief Move the robot footprint to the target pose
    * @param target_pose The target pose
    * @return The moved footprint
    */
   geometry_msgs::PolygonStamped move_footprint(const State &target_pose);
+
+
+  /**
+   * @brief Create a robot polygon footprint
+   * @param target_pose The target pose
+   * @param use_ackerman If true, use ackerman model to create footprint
+   * @return The robot polygon footprint
+   */
+  geometry_msgs::PolygonStamped ackerman_move_footprint(const State &target_pose, bool use_ackerman);
 
   /**
    * @brief Check if the obstacle is inside of robot footprint
@@ -309,6 +338,14 @@ public:
    * @return The generated trajectory
    */
   std::vector<State> generate_trajectory(const double velocity, const double yawrate);
+
+  /**
+   * @brief Generate trajectory
+   * @param velocity The velocity of robot
+   * @param steer_angle The steering angle of ackerman robot
+   * @return The generated trajectory
+   */
+  std::vector<State> generate_trajectory(const double velocity, const double steer_angle, bool use_ackerman);
 
   /**
    * @brief Generate trajectory
@@ -358,6 +395,8 @@ public:
    */
   void normalize_costs(std::vector<Cost> &costs);
 
+  void visualize_obstacles();
+
   /**
    * @brief Create a marker message
    * @param id The id of marker
@@ -401,29 +440,30 @@ public:
   std::vector<State>
   dwa_planning(const Eigen::Vector3d &goal, std::vector<std::pair<std::vector<State>, bool>> &trajectories);
 
+  void publishRobotMarker(const std_msgs::Header& header, const geometry_msgs::Pose& pose);
+
 protected:
   std::string global_frame_;
   std::string robot_frame_;
   double hz_;
-  double target_velocity_;
-  double max_velocity_;
-  double min_velocity_;
+  
+  
   double max_yawrate_;
   double min_yawrate_;
   double max_in_place_yawrate_;
   double min_in_place_yawrate_;
-  double max_acceleration_;
-  double max_deceleration_;
+  
   double max_d_yawrate_;
   double sim_period_;
   double angle_resolution_;
-  double predict_time_;
+  
   double sleep_time_after_finish_;
   double obs_cost_gain_;
   double to_goal_cost_gain_;
+  double to_goal_orientation_cost_gain_;
   double speed_cost_gain_;
   double path_cost_gain_;
-  double dist_to_goal_th_;
+  
   double turn_direction_th_;
   double angle_to_goal_th_;
   double sim_direction_;
@@ -440,7 +480,7 @@ protected:
   bool local_map_updated_;
   bool scan_updated_;
   bool has_reached_;
-  int velocity_samples_;
+
   int yawrate_samples_;
   int sim_time_samples_;
   int subscribe_count_th_;
@@ -463,6 +503,8 @@ protected:
   ros::Subscriber odom_sub_;
   ros::Subscriber scan_sub_;
   ros::Subscriber target_velocity_sub_;
+  ros::Publisher robot_polygon_marker_pub_;
+  ros::Publisher obstacle_points_pub_;
 
   geometry_msgs::Twist current_cmd_vel_;
   std::optional<geometry_msgs::PoseStamped> goal_msg_;
@@ -473,6 +515,24 @@ protected:
   std_msgs::Bool has_finished_;
 
   tf::TransformListener listener_;
+
+  // ackerman parameters
+  int steer_angle_samples_;
+  int velocity_samples_;
+  double predict_time_;
+  double robot_width_;
+  double robot_length_;
+  double wheelbase_;
+  double max_steer_angle_;
+  double front_overhang_;
+  double rear_overhang_;
+  double max_velocity_;
+  double min_velocity_;
+  double target_velocity_;
+  double max_acceleration_;
+  double max_deceleration_;
+
+  double dist_to_goal_th_;
 };
 
 #endif  // DWA_PLANNER_DWA_PLANNER_H

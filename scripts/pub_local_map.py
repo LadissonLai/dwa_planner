@@ -27,6 +27,7 @@ class MapRepublisher:
             if self.latest_map is not None:
                 # 以 1Hz 频率发布最新的地图消息
                 self.map_pub.publish(self.latest_map)
+                rospy.loginfo_throttle(2, "Republished local map at 1Hz")
             self.rate.sleep()
 
 if __name__ == '__main__':

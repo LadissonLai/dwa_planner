@@ -32,6 +32,9 @@ DWAPlanner::DWAPlanner(void)
   scan_sub_ = nh_.subscribe("/scan", 1, &DWAPlanner::scan_callback, this);
   target_velocity_sub_ = nh_.subscribe("/target_velocity", 1, &DWAPlanner::target_velocity_callback, this);
 
+  robot_polygon_marker_pub_ = nh_.advertise<visualization_msgs::Marker>("/robot_polygon_marker", 1);
+  obstacle_points_pub_ = nh_.advertise<visualization_msgs::MarkerArray>("obstacle_points", 1);
+
   if (!use_footprint_)
     footprint_ = geometry_msgs::PolygonStamped();
   if (!use_path_cost_)
@@ -62,14 +65,14 @@ void DWAPlanner::Window::show(void)
   ROS_INFO_STREAM("\t\tmin: " << min_yawrate_);
 }
 
-DWAPlanner::Cost::Cost(void) : obs_cost_(0.0), to_goal_cost_(0.0), speed_cost_(0.0), path_cost_(0.0), total_cost_(0.0)
+DWAPlanner::Cost::Cost(void) : obs_cost_(0.0), to_goal_cost_(0.0), to_goal_orientation_cost_(0.0), speed_cost_(0.0), path_cost_(0.0), total_cost_(0.0)
 {
 }
 
 DWAPlanner::Cost::Cost(
     const float obs_cost, const float to_goal_cost, const float speed_cost, const float path_cost,
     const float total_cost)
-    : obs_cost_(obs_cost), to_goal_cost_(to_goal_cost), speed_cost_(speed_cost), path_cost_(path_cost),
+    : obs_cost_(obs_cost), to_goal_cost_(to_goal_cost), to_goal_orientation_cost_(0), speed_cost_(speed_cost), path_cost_(path_cost),
       total_cost_(total_cost)
 {
 }
@@ -79,11 +82,12 @@ void DWAPlanner::Cost::show(void)
   ROS_INFO_STREAM("Cost: " << total_cost_);
   ROS_INFO_STREAM("\tObs cost: " << obs_cost_);
   ROS_INFO_STREAM("\tGoal cost: " << to_goal_cost_);
+  ROS_INFO_STREAM("\tGoal Orientation cost: " << to_goal_orientation_cost_);
   ROS_INFO_STREAM("\tSpeed cost: " << speed_cost_);
   ROS_INFO_STREAM("\tPath cost: " << path_cost_);
 }
 
-void DWAPlanner::Cost::calc_total_cost(void) { total_cost_ = obs_cost_ + to_goal_cost_ + speed_cost_ + path_cost_; }
+void DWAPlanner::Cost::calc_total_cost(void) { total_cost_ = obs_cost_ + to_goal_cost_ + to_goal_orientation_cost_ + speed_cost_ + path_cost_; }
 
 void DWAPlanner::goal_callback(const geometry_msgs::PoseStampedConstPtr &msg)
 {
@@ -123,6 +127,41 @@ void DWAPlanner::odom_callback(const nav_msgs::OdometryConstPtr &msg)
   current_cmd_vel_ = msg->twist.twist;
   odom_not_subscribe_count_ = 0;
   odom_updated_ = true;
+  publishRobotMarker(msg->header, msg->pose.pose);
+}
+
+void DWAPlanner::publishRobotMarker(const std_msgs::Header& header, const geometry_msgs::Pose& pose) {
+  visualization_msgs::Marker marker;
+  marker.header.frame_id = header.frame_id; // 使用姿态消息的帧ID
+  marker.header.stamp = ros::Time::now();
+
+  marker.ns = "robot_visualization";
+  marker.id = 0;
+  marker.type = visualization_msgs::Marker::CUBE; // 立方体最适合表示矩形
+  marker.action = visualization_msgs::Marker::ADD;
+
+  // 设置Marker的姿态与机器人姿态一致
+  marker.pose.position.x = pose.position.x;
+  marker.pose.position.y = pose.position.y;
+  marker.pose.position.z = pose.position.z;
+
+  marker.pose.orientation.x = pose.orientation.x;
+  marker.pose.orientation.y = pose.orientation.y;
+  marker.pose.orientation.z = pose.orientation.z;
+  marker.pose.orientation.w = pose.orientation.w;
+
+  // 根据机器人尺寸设置Marker的缩放
+  marker.scale.x = robot_length_;
+  marker.scale.y = robot_width_;
+  marker.scale.z = 0.1; // 较小的Z轴高度，方便2D可视化
+
+  // 设置Marker的颜色（蓝色，带一点透明度）
+  marker.color.r = 0.0f;
+  marker.color.g = 0.0f;
+  marker.color.b = 1.0f;
+  marker.color.a = 0.7f; // Alpha (透明度)
+
+  robot_polygon_marker_pub_.publish(marker);
 }
 
 void DWAPlanner::target_velocity_callback(const geometry_msgs::TwistConstPtr &msg)
@@ -169,27 +208,27 @@ DWAPlanner::dwa_planning(const Eigen::Vector3d &goal, std::vector<std::pair<std:
   Cost min_cost(0.0, 0.0, 0.0, 0.0, 1e6);
   const Window dynamic_window = calc_dynamic_window();
   std::vector<State> best_traj;
-  best_traj.resize(sim_time_samples_);
+  best_traj.resize(sim_time_samples_); // 每条轨迹的采样点数
   std::vector<Cost> costs;
-  const size_t costs_size = velocity_samples_ * (yawrate_samples_ + 1);
+  const size_t costs_size = velocity_samples_ * (steer_angle_samples_ + 1); // 轨迹的数量
   costs.reserve(costs_size);
 
   const double velocity_resolution =
       std::max((dynamic_window.max_velocity_ - dynamic_window.min_velocity_) / (velocity_samples_ - 1), DBL_EPSILON);
-  const double yawrate_resolution =
-      std::max((dynamic_window.max_yawrate_ - dynamic_window.min_yawrate_) / (yawrate_samples_ - 1), DBL_EPSILON);
+  const double steer_resolution =
+      std::max((dynamic_window.max_yawrate_ - dynamic_window.min_yawrate_) / (steer_angle_samples_ - 1), DBL_EPSILON);
 
   int available_traj_count = 0;
   for (int i = 0; i < velocity_samples_; i++)
   {
     const double v = dynamic_window.min_velocity_ + velocity_resolution * i;
-    for (int j = 0; j < yawrate_samples_; j++)
+    for (int j = 0; j < steer_angle_samples_; j++)
     {
       std::pair<std::vector<State>, bool> traj;
-      double y = dynamic_window.min_yawrate_ + yawrate_resolution * j;
-      if (v < slow_velocity_th_)
-        y = y > 0 ? std::max(y, min_yawrate_) : std::min(y, -min_yawrate_);
-      traj.first = generate_trajectory(v, y);
+      double y = dynamic_window.min_yawrate_ + steer_resolution * j;
+      // if (v < slow_velocity_th_)
+      //   y = y > 0 ? std::max(y, min_yawrate_) : std::min(y, -min_yawrate_);
+      traj.first = generate_trajectory(v, y, true);
       const Cost cost = evaluate_trajectory(traj.first, goal);
       costs.push_back(cost);
       if (cost.obs_cost_ == 1e6)
@@ -236,6 +275,7 @@ DWAPlanner::dwa_planning(const Eigen::Vector3d &goal, std::vector<std::pair<std:
       if (costs[i].obs_cost_ != 1e6)
       {
         costs[i].to_goal_cost_ *= to_goal_cost_gain_;
+        costs[i].to_goal_orientation_cost_ *= to_goal_orientation_cost_gain_;
         costs[i].obs_cost_ *= obs_cost_gain_;
         costs[i].speed_cost_ *= speed_cost_gain_;
         costs[i].path_cost_ *= path_cost_gain_;
@@ -270,6 +310,8 @@ void DWAPlanner::normalize_costs(std::vector<DWAPlanner::Cost> &costs)
       max_cost.obs_cost_ = std::max(max_cost.obs_cost_, cost.obs_cost_);
       min_cost.to_goal_cost_ = std::min(min_cost.to_goal_cost_, cost.to_goal_cost_);
       max_cost.to_goal_cost_ = std::max(max_cost.to_goal_cost_, cost.to_goal_cost_);
+      min_cost.to_goal_orientation_cost_ = std::min(min_cost.to_goal_orientation_cost_, cost.to_goal_orientation_cost_);
+      max_cost.to_goal_orientation_cost_ = std::max(max_cost.to_goal_orientation_cost_, cost.to_goal_orientation_cost_);
       if (use_speed_cost_)
       {
         min_cost.speed_cost_ = std::min(min_cost.speed_cost_, cost.speed_cost_);
@@ -290,6 +332,8 @@ void DWAPlanner::normalize_costs(std::vector<DWAPlanner::Cost> &costs)
       cost.obs_cost_ = (cost.obs_cost_ - min_cost.obs_cost_) / (max_cost.obs_cost_ - min_cost.obs_cost_ + DBL_EPSILON);
       cost.to_goal_cost_ = (cost.to_goal_cost_ - min_cost.to_goal_cost_) /
                            (max_cost.to_goal_cost_ - min_cost.to_goal_cost_ + DBL_EPSILON);
+      cost.to_goal_orientation_cost_ = (cost.to_goal_orientation_cost_ - min_cost.to_goal_orientation_cost_) /
+                           (max_cost.to_goal_orientation_cost_ - min_cost.to_goal_orientation_cost_ + DBL_EPSILON);
       if (use_speed_cost_)
         cost.speed_cost_ =
             (cost.speed_cost_ - min_cost.speed_cost_) / (max_cost.speed_cost_ - min_cost.speed_cost_ + DBL_EPSILON);
@@ -348,7 +392,7 @@ bool DWAPlanner::can_move(void)
     scan_not_subscribe_count_++;
 
   if (footprint_.has_value() && goal_msg_.has_value() && edge_points_on_path_.has_value() &&
-      odom_not_subscribe_count_ <= subscribe_count_th_ && local_map_not_subscribe_count_ <= subscribe_count_th_ &&
+      odom_not_subscribe_count_ <= subscribe_count_th_ && 
       scan_not_subscribe_count_ <= subscribe_count_th_)
     return true;
   else
@@ -360,7 +404,7 @@ geometry_msgs::Twist DWAPlanner::calc_cmd_vel(void)
   geometry_msgs::Twist cmd_vel;
   std::pair<std::vector<State>, bool> best_traj;
   std::vector<std::pair<std::vector<State>, bool>> trajectories;
-  const size_t trajectories_size = velocity_samples_ * (yawrate_samples_ + 1);
+  const size_t trajectories_size = velocity_samples_ * (steer_angle_samples_ + 1);
   trajectories.reserve(trajectories_size);
 
   geometry_msgs::PoseStamped goal_;
@@ -380,37 +424,44 @@ geometry_msgs::Twist DWAPlanner::calc_cmd_vel(void)
 
   if (dist_to_goal_th_ < goal.segment(0, 2).norm() && !has_reached_) // too far
   {
-    if (can_adjust_robot_direction(goal)) // if angle error too large, rotate in place
-    {
-      cmd_vel.angular.z = angle_to_goal > 0 ? std::min(angle_to_goal, max_in_place_yawrate_)
-                                            : std::max(angle_to_goal, -max_in_place_yawrate_);
-      cmd_vel.angular.z = cmd_vel.angular.z > 0 ? std::max(cmd_vel.angular.z, min_in_place_yawrate_)
-                                                : std::min(cmd_vel.angular.z, -min_in_place_yawrate_);
-      best_traj.first = generate_trajectory(cmd_vel.angular.z, goal);
-      trajectories.push_back(best_traj);
-    }
-    else
-    {
-      best_traj.first = dwa_planning(goal, trajectories);
-      cmd_vel.linear.x = best_traj.first.front().velocity_;
-      cmd_vel.angular.z = best_traj.first.front().yawrate_;
-    }
+    // if (can_adjust_robot_direction(goal)) // if angle error too large, rotate in place
+    // {
+    //   cmd_vel.angular.z = angle_to_goal > 0 ? std::min(angle_to_goal, max_in_place_yawrate_)
+    //                                         : std::max(angle_to_goal, -max_in_place_yawrate_);
+    //   cmd_vel.angular.z = cmd_vel.angular.z > 0 ? std::max(cmd_vel.angular.z, min_in_place_yawrate_)
+    //                                             : std::min(cmd_vel.angular.z, -min_in_place_yawrate_);
+    //   best_traj.first = generate_trajectory(cmd_vel.angular.z, goal);
+    //   trajectories.push_back(best_traj);
+    // }
+    // else
+    // {
+    //   best_traj.first = dwa_planning(goal, trajectories);
+    //   cmd_vel.linear.x = best_traj.first.front().velocity_;
+    //   cmd_vel.angular.z = best_traj.first.front().yawrate_;
+    // }
+
+    best_traj.first = dwa_planning(goal, trajectories);
+    cmd_vel.linear.x = best_traj.first.front().velocity_;
+    cmd_vel.angular.z = best_traj.first.front().yawrate_;
+
   }
   else // close enough to goal
   {
     has_reached_ = true;
-    if (turn_direction_th_ < fabs(goal[2]))
-    {
-      cmd_vel.angular.z =
-          goal[2] > 0 ? std::min(goal[2], max_in_place_yawrate_) : std::max(goal[2], -max_in_place_yawrate_);
-      cmd_vel.angular.z = cmd_vel.angular.z > 0 ? std::max(cmd_vel.angular.z, min_in_place_yawrate_)
-                                                : std::min(cmd_vel.angular.z, -min_in_place_yawrate_);
-    }
-    else
-    {
-      has_finished_.data = true;
-      has_reached_ = false;
-    }
+    // if (turn_direction_th_ < fabs(goal[2]))
+    // {
+    //   cmd_vel.angular.z =
+    //       goal[2] > 0 ? std::min(goal[2], max_in_place_yawrate_) : std::max(goal[2], -max_in_place_yawrate_);
+    //   cmd_vel.angular.z = cmd_vel.angular.z > 0 ? std::max(cmd_vel.angular.z, min_in_place_yawrate_)
+    //                                             : std::min(cmd_vel.angular.z, -min_in_place_yawrate_);
+    // }
+    // else
+    // {
+    //   has_finished_.data = true;
+    //   has_reached_ = false;
+    // }
+    has_finished_.data = true;
+    has_reached_ = false;
     best_traj.first = generate_trajectory(cmd_vel.linear.x, cmd_vel.angular.z);
     trajectories.push_back(best_traj);
   }
@@ -451,7 +502,7 @@ bool DWAPlanner::check_collision(const std::vector<State> &traj)
   {
     for (const auto &obs : obs_list_.poses)
     {
-      const geometry_msgs::PolygonStamped footprint = move_footprint(state);
+      const geometry_msgs::PolygonStamped footprint = ackerman_move_footprint(state, true);
       if (is_inside_of_robot(obs.position, footprint, state))
         return true;
     }
@@ -467,6 +518,8 @@ DWAPlanner::Window DWAPlanner::calc_dynamic_window(void)
   window.max_velocity_ = std::min((current_cmd_vel_.linear.x + max_acceleration_ * sim_period_), target_velocity_);
   window.min_yawrate_ = std::max((current_cmd_vel_.angular.z - max_d_yawrate_ * sim_period_), -max_yawrate_);
   window.max_yawrate_ = std::min((current_cmd_vel_.angular.z + max_d_yawrate_ * sim_period_), max_yawrate_);
+  window.min_steer_angle_ = -max_steer_angle_;
+  window.max_steer_angle_ = max_steer_angle_;
   return window;
 }
 
@@ -476,6 +529,12 @@ float DWAPlanner::calc_to_goal_cost(const std::vector<State> &traj, const Eigen:
   return (last_position.segment(0, 2) - goal.segment(0, 2)).norm();
 }
 
+float DWAPlanner::calc_to_goal_orientation_cost(const std::vector<State> &traj, const Eigen::Vector3d &goal)
+{
+  Eigen::Vector3d last_position(traj.back().x_, traj.back().y_, traj.back().yaw_);
+  return (last_position.segment(2, 1) - goal.segment(2, 1)).norm();
+}
+
 float DWAPlanner::calc_obs_cost(const std::vector<State> &traj)
 {
   float min_dist = obs_range_;
@@ -483,12 +542,23 @@ float DWAPlanner::calc_obs_cost(const std::vector<State> &traj)
   {
     for (const auto &obs : obs_list_.poses)
     {
-      float dist;
-      if (use_footprint_)
-        dist = calc_dist_from_robot(obs.position, state);
-      else
-        dist = hypot((state.x_ - obs.position.x), (state.y_ - obs.position.y)) - robot_radius_ - footprint_padding_;
-
+      // ADD:local_map坐标变换到robot坐标系
+      geometry_msgs::PoseStamped obs_in_robot_frame;
+      geometry_msgs::PoseStamped obs_in_local_map;
+      // obs_in_local_map.header = obs_list_.header;
+      obs_in_local_map.header.frame_id = obs_list_.header.frame_id;
+      obs_in_local_map.header.stamp = ros::Time(0);
+      obs_in_local_map.pose.position = obs.position;
+      obs_in_local_map.pose.orientation = obs.orientation;
+      try
+      {
+        listener_.transformPose(robot_frame_, obs_in_local_map, obs_in_robot_frame);
+      }
+      catch (tf::TransformException &ex)
+      {
+        ROS_WARN_THROTTLE(1.0, "TF transform failed in create_obs_list: %s", ex.what());
+      }
+      float dist = calc_dist_from_robot(obs_in_robot_frame.pose.position, state, true);
       if (dist < DBL_EPSILON)
         return 1e6;
       min_dist = std::min(min_dist, dist);
@@ -537,6 +607,24 @@ std::vector<DWAPlanner::State> DWAPlanner::generate_trajectory(const double velo
   return trajectory;
 }
 
+std::vector<DWAPlanner::State> DWAPlanner::generate_trajectory(const double velocity, const double steer_angle, bool use_ackerman)
+{
+  if (!use_ackerman)
+  {
+    return std::vector<State>();
+  }
+  const double yawrate = velocity * tan(steer_angle) / wheelbase_;
+  std::vector<State> trajectory;
+  trajectory.resize(sim_time_samples_);
+  State state;
+  for (int i = 0; i < sim_time_samples_; i++)
+  {
+    motion(state, velocity, yawrate);
+    trajectory[i] = state;
+  }
+  return trajectory;
+  
+}
 std::vector<DWAPlanner::State> DWAPlanner::generate_trajectory(const double yawrate, const Eigen::Vector3d &goal)
 {
   const double target_direction = atan2(goal.y(), goal.x()) > 0 ? sim_direction_ : -sim_direction_;
@@ -556,6 +644,7 @@ DWAPlanner::Cost DWAPlanner::evaluate_trajectory(const std::vector<State> &traje
 {
   Cost cost;
   cost.to_goal_cost_ = calc_to_goal_cost(trajectory, goal);
+  cost.to_goal_orientation_cost_ = calc_to_goal_orientation_cost(trajectory, goal);
   cost.obs_cost_ = calc_obs_cost(trajectory);
   cost.speed_cost_ = calc_speed_cost(trajectory);
   cost.path_cost_ = calc_path_cost(trajectory);
@@ -613,6 +702,24 @@ float DWAPlanner::calc_dist_from_robot(const geometry_msgs::Point &obstacle, con
   }
 }
 
+float DWAPlanner::calc_dist_from_robot(const geometry_msgs::Point &obstacle, const State &state, bool use_ackerman)
+{
+  if (!use_ackerman)
+  {
+    return 0.0f;
+  }
+  const geometry_msgs::PolygonStamped footprint = ackerman_move_footprint(state, use_ackerman); // pose polygon after moving in the current state coorinate
+  if (is_inside_of_robot(obstacle, footprint, state))
+  {
+    return 0.0;
+  }
+  else
+  {
+    geometry_msgs::Point intersection = calc_intersection(obstacle, state, footprint);
+    return hypot((obstacle.x - intersection.x), (obstacle.y - intersection.y));
+  }
+}
+
 geometry_msgs::PolygonStamped DWAPlanner::move_footprint(const State &target_pose)
 {
   geometry_msgs::PolygonStamped footprint;
@@ -646,6 +753,44 @@ geometry_msgs::PolygonStamped DWAPlanner::move_footprint(const State &target_pos
     point.y = point_out.y() + target_pose.y_;
   }
 
+  return footprint;
+}
+
+geometry_msgs::PolygonStamped DWAPlanner::ackerman_move_footprint(const State &target_pose, bool use_ackerman)
+{
+  if (!use_ackerman)
+  { 
+    return geometry_msgs::PolygonStamped();
+  }
+  geometry_msgs::PolygonStamped footprint;
+  geometry_msgs::Point32 front_left, rear_left, rear_right, front_right;
+  front_left.x = wheelbase_+ front_overhang_ + footprint_padding_;
+  front_left.y = robot_width_ / 2.0 + footprint_padding_;
+  rear_left.x = -(rear_overhang_ + footprint_padding_);
+  rear_left.y = robot_width_ / 2.0 + footprint_padding_;
+  rear_right.x = -(rear_overhang_ + footprint_padding_);
+  rear_right.y = -(robot_width_ / 2.0 + footprint_padding_);
+  front_right.x = wheelbase_ + front_overhang_ + footprint_padding_;
+  front_right.y = -(robot_width_ / 2.0 + footprint_padding_);
+
+  footprint.polygon.points.push_back(front_left);
+  footprint.polygon.points.push_back(rear_left);
+  footprint.polygon.points.push_back(rear_right);
+  footprint.polygon.points.push_back(front_right);
+  footprint.header.stamp = ros::Time::now();
+
+  // add rotation
+  for (auto &point : footprint.polygon.points)
+  {
+    Eigen::VectorXf point_in(2);
+    point_in << point.x, point.y;
+    Eigen::Matrix2f rot;
+    rot = Eigen::Rotation2Df(target_pose.yaw_);
+    const Eigen::VectorXf point_out = rot * point_in;
+
+    point.x = point_out.x() + target_pose.x_;
+    point.y = point_out.y() + target_pose.y_;
+  }
   return footprint;
 }
 
@@ -707,6 +852,7 @@ bool DWAPlanner::is_inside_of_triangle(const geometry_msgs::Point &target_point,
 
 void DWAPlanner::motion(State &state, const double velocity, const double yawrate)
 {
+  // Dead Reckon(DR) Algorithm
   const double sim_time_step = predict_time_ / static_cast<double>(sim_time_samples_);
   state.yaw_ += yawrate * sim_time_step;
   state.x_ += velocity * std::cos(state.yaw_) * sim_time_step;
@@ -739,6 +885,8 @@ void DWAPlanner::create_obs_list(const sensor_msgs::LaserScan &scan)
 void DWAPlanner::create_obs_list(const nav_msgs::OccupancyGrid &map)
 {
   obs_list_.poses.clear();
+  obs_list_.header = map.header;
+  // ROS_WARN_THROTTLE(1.0, "Creating obstacle list from local map");
   const double max_search_dist = hypot(map.info.origin.position.x, map.info.origin.position.y);
   for (float angle = -M_PI; angle <= M_PI; angle += angle_resolution_)
   {
@@ -746,10 +894,14 @@ void DWAPlanner::create_obs_list(const nav_msgs::OccupancyGrid &map)
     {
       geometry_msgs::PoseStamped pose_in_robot_frame;
       pose_in_robot_frame.header.frame_id = robot_frame_;
-      pose_in_robot_frame.header.stamp = ros::Time::now();
+      pose_in_robot_frame.header.stamp = ros::Time(0);
       pose_in_robot_frame.pose.position.x = dist * cos(angle);
       pose_in_robot_frame.pose.position.y = dist * sin(angle);
-      // 坐标变换到local_map坐标系
+      pose_in_robot_frame.pose.orientation.x = 0.0;
+      pose_in_robot_frame.pose.orientation.y = 0.0;
+      pose_in_robot_frame.pose.orientation.z = 0.0;
+      pose_in_robot_frame.pose.orientation.w = 1.0;
+      // ADD:坐标变换到local_map坐标系
       geometry_msgs::PoseStamped pose_in_local_map;
       try
       {
@@ -764,18 +916,73 @@ void DWAPlanner::create_obs_list(const nav_msgs::OccupancyGrid &map)
       const int index_y = floor((pose_in_local_map.pose.position.y - map.info.origin.position.y) / map.info.resolution);
       if ((0 <= index_x && index_x < map.info.width) && (0 <= index_y && index_y < map.info.height))
       {
-        if (map.data[index_x + index_y * map.info.width] == 100) // TODO:BUG, 栅格地图不一定100才是障碍物
+        if (map.data[index_x + index_y * map.info.width] >= 90) // TODO:BUG, 栅格地图不一定100才是障碍物
         {
           geometry_msgs::Pose pose;
-          pose.position.x = pose_in_robot_frame.pose.position.x;
-          pose.position.y = pose_in_robot_frame.pose.position.y;
-          pose.orientation = pose_in_robot_frame.pose.orientation;
+          pose.position.x = pose_in_local_map.pose.position.x;
+          pose.position.y = pose_in_local_map.pose.position.y;
+          pose.orientation = pose_in_local_map.pose.orientation;
           obs_list_.poses.push_back(pose);
           break;
         }
       }
     }
   }
+  // 发布障碍物点可视化
+  visualize_obstacles();
+}
+
+// 添加新的可视化函数
+void DWAPlanner::visualize_obstacles(void)
+{
+  visualization_msgs::MarkerArray obstacle_markers;
+  
+  // 首先发送清除标记
+  visualization_msgs::Marker clear_marker;
+  clear_marker.header.frame_id = obs_list_.header.frame_id;
+  clear_marker.header.stamp = ros::Time::now();
+  clear_marker.ns = "obstacle_points";
+  clear_marker.action = visualization_msgs::Marker::DELETEALL;
+  obstacle_markers.markers.push_back(clear_marker);
+  
+  // 为每个障碍物点创建标记
+  for (size_t i = 0; i < obs_list_.poses.size(); i++)
+  {
+    visualization_msgs::Marker marker;
+    marker.header.frame_id = obs_list_.header.frame_id;
+    marker.header.stamp = ros::Time::now();
+    marker.ns = "obstacle_points";
+    marker.id = i + 1; // 从1开始，避免与清除标记冲突
+    marker.type = visualization_msgs::Marker::SPHERE;
+    marker.action = visualization_msgs::Marker::ADD;
+    
+    // 设置障碍物点的位置
+    marker.pose.position.x = obs_list_.poses[i].position.x;
+    marker.pose.position.y = obs_list_.poses[i].position.y;
+    marker.pose.position.z = 0.1; // 稍微抬高以便可视化
+    marker.pose.orientation.w = 1.0;
+    
+    // 设置标记大小
+    marker.scale.x = 0.1;
+    marker.scale.y = 0.1;
+    marker.scale.z = 0.1;
+    
+    // 设置颜色为红色
+    marker.color.r = 1.0;
+    marker.color.g = 0.0;
+    marker.color.b = 0.0;
+    marker.color.a = 0.8;
+    
+    // 设置持续时间（长期显示直到下次更新）
+    marker.lifetime = ros::Duration(0); // 0表示永久显示直到被删除
+    
+    obstacle_markers.markers.push_back(marker);
+  }
+  
+  // 发布标记数组
+  obstacle_points_pub_.publish(obstacle_markers);
+  
+  ROS_INFO_THROTTLE(2.0, "Published %lu obstacle points for visualization", obs_list_.poses.size());
 }
 
 visualization_msgs::Marker DWAPlanner::create_marker_msg(
