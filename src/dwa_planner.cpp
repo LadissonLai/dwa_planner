@@ -1064,7 +1064,7 @@ void DWAPlanner::visualize_footprints(const std::vector<State> &trajectory, cons
   visualization_msgs::MarkerArray v_footprints;
   for (int i = 0; i < trajectory.size(); i++)
   {
-    const geometry_msgs::PolygonStamped footprint = move_footprint(trajectory[i]);
+    const geometry_msgs::PolygonStamped footprint = ackerman_move_footprint(trajectory[i], true);
     visualization_msgs::Marker v_footprint = create_marker_msg(i, v_path_width_ * 0.2, color, trajectory, footprint);
     v_footprints.markers.push_back(v_footprint);
   }
