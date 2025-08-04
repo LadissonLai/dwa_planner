@@ -442,6 +442,14 @@ public:
 
   void publishRobotMarker(const std_msgs::Header& header, const geometry_msgs::Pose& pose);
 
+  // interface 
+  void initialize(const nav_msgs::OccupancyGrid& costmap);
+  bool makePlan(const geometry_msgs::PoseStamped& start_pose, const geometry_msgs::PoseStamped& goal_pose);
+  const nav_msgs::Path& getPath() const
+  {
+    return path_;
+  }
+
 protected:
   std::string global_frame_;
   std::string robot_frame_;
@@ -533,6 +541,10 @@ protected:
   double max_deceleration_;
 
   double dist_to_goal_th_;
+
+  nav_msgs::Path path_;
+  nav_msgs::OccupancyGrid costmap_;
+  bool costmap_initialized_{false};
 };
 
 #endif  // DWA_PLANNER_DWA_PLANNER_H

@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "dwa_planner/dwa_planner.h"
+#include "dwa_planner.h"
 
 DWAPlanner::DWAPlanner(void)
     : local_nh_("~"), odom_updated_(false), local_map_updated_(false), scan_updated_(false), has_reached_(false),
@@ -164,6 +165,56 @@ void DWAPlanner::publishRobotMarker(const std_msgs::Header& header, const geomet
   robot_polygon_marker_pub_.publish(marker);
 }
 
+void DWAPlanner::initialize(const nav_msgs::OccupancyGrid &costmap)
+{
+  costmap_ = costmap;
+}
+bool DWAPlanner::makePlan(const geometry_msgs::PoseStamped &start_pose, const geometry_msgs::PoseStamped &goal_pose)
+{
+  geometry_msgs::Twist cmd_vel;
+  std::pair<std::vector<State>, bool> best_traj;
+  std::vector<std::pair<std::vector<State>, bool>> trajectories;
+  const size_t trajectories_size = velocity_samples_ * (steer_angle_samples_ + 1);
+  trajectories.reserve(trajectories_size);
+
+  geometry_msgs::PoseStamped goal_in_robot_frame;
+  try
+  {
+    listener_.transformPose(robot_frame_, ros::Time(0), goal_pose, goal_pose.header.frame_id, goal_in_robot_frame);
+  }
+  catch (tf::TransformException ex)
+  {
+    ROS_ERROR("%s", ex.what());
+  }
+  const Eigen::Vector3d goal(goal_in_robot_frame.pose.position.x, goal_in_robot_frame.pose.position.y, tf::getYaw(goal_in_robot_frame.pose.orientation));
+
+  const double angle_to_goal = atan2(goal.y(), goal.x());
+  if (M_PI / 4.0 < fabs(angle_to_goal))
+    use_speed_cost_ = true;
+  else{
+    use_speed_cost_ = false;
+  }
+
+  if (dist_to_goal_th_ < goal.segment(0, 2).norm()) // too far
+  {
+    best_traj.first = dwa_planning(goal, trajectories);
+    cmd_vel.linear.x = best_traj.first.front().velocity_;
+    cmd_vel.angular.z = best_traj.first.front().yawrate_;
+
+  }
+  else // close enough to goal
+  {
+    best_traj.first = generate_trajectory(cmd_vel.linear.x, cmd_vel.angular.z);
+    trajectories.push_back(best_traj);
+  }
+
+  visualize_trajectory(best_traj.first, selected_trajectory_pub_);
+  visualize_trajectories(trajectories, candidate_trajectories_pub_);
+  visualize_footprints(best_traj.first, predict_footprints_pub_);
+
+  // return cmd_vel;
+  return false;
+}
 void DWAPlanner::target_velocity_callback(const geometry_msgs::TwistConstPtr &msg)
 {
   target_velocity_ = std::min(msg->linear.x, max_velocity_);
@@ -1064,7 +1115,7 @@ void DWAPlanner::visualize_footprints(const std::vector<State> &trajectory, cons
   visualization_msgs::MarkerArray v_footprints;
   for (int i = 0; i < trajectory.size(); i++)
   {
-    const geometry_msgs::PolygonStamped footprint = move_footprint(trajectory[i]);
+    const geometry_msgs::PolygonStamped footprint = ackerman_move_footprint(trajectory[i], true);
     visualization_msgs::Marker v_footprint = create_marker_msg(i, v_path_width_ * 0.2, color, trajectory, footprint);
     v_footprints.markers.push_back(v_footprint);
   }
