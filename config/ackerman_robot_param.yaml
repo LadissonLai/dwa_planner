@@ -7,11 +7,11 @@ ROBOT_FRAME: "base_link"
 # ackerman dynamics parameters
 ROBOT_WIDTH: 0.3          # [m], Width of the robot
 ROBOT_LENGTH: 0.4         # [m], Length of the robot
-WHEELBASE: 0.3           # [m], Distance between the front and rear wheels
+WHEELBASE: 0.2           # [m], Distance between the front and rear wheels
 FRONT_OVERHANG: 0.0       # [m], Distance from the front wheel to the front of the robot
-REAR_OVERHANG: 0.0        # [m], Distance from the rear
+REAR_OVERHANG: 0.1        # [m], Distance from the rear
 MAX_STEER_ANGLE: 0.5   # [rad], Maximum steering angle of the robot, 0.5 radians ~=28 degrees
-FOOTPRINT_PADDING: 0.1 # [m], If localmap contains padding, you should set this param to 0.0
+FOOTPRINT_PADDING: 0.0 # [m], If localmap contains padding, you should set this param to 0.0
 
 
 # Robot Configuration Parameters
