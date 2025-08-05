@@ -16,11 +16,11 @@ OBS_RANGE: 2.5          # [m]
 # real needed params
 # Target Parameters
 TARGET_VELOCITY: 2.0 # [m/s]
-STEER_ANGLE_SAMPLES: 20
-VELOCITY_SAMPLES: 20
+STEER_ANGLE_SAMPLES: 10
+VELOCITY_SAMPLES: 10
 GOAL_THRESHOLD: 0.1           # [m]
 
-PREDICT_TIME: 3.0     # [s]
+PREDICT_TIME: 2.0     # [s]
 SIM_TIME_SAMPLES: 10 # trajctory collision check samples
 
 ANGLE_RESOLUTION: 0.087 # [rad] obstacle angle resolution from costmap, 0.087 rad ~= 5 deg
