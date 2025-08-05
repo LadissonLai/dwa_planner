@@ -7,7 +7,7 @@
     <arg name="dwa_param" default="$(find dwa_planner)/config/ackerman_dwa_param.yaml"/>
     <arg name="robot_param" default="$(find dwa_planner)/config/ackerman_robot_param.yaml"/>
 
-    <arg name="v_path_width" default="0.05"/>
+    <arg name="v_path_width" default="0.1"/>
 
     <!-- topic name -->
     <!-- published topics -->

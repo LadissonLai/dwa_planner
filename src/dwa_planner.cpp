@@ -120,6 +120,7 @@ bool DWAPlanner::makePlan(const geometry_msgs::PoseStamped &start_pose, const ge
   geometry_msgs::Twist cmd_vel;
   std::pair<std::vector<State>, bool> best_traj;
   std::vector<std::pair<std::vector<State>, bool>> trajectories;
+  int available_traj_count = 0;
   const size_t trajectories_size = velocity_samples_ * (steer_angle_samples_ + 1);
   trajectories.reserve(trajectories_size);
 
@@ -136,7 +137,7 @@ bool DWAPlanner::makePlan(const geometry_msgs::PoseStamped &start_pose, const ge
   const Eigen::Vector3d goal(goal_in_robot_frame.pose.position.x, goal_in_robot_frame.pose.position.y, tf::getYaw(goal_in_robot_frame.pose.orientation));
 
   const double angle_to_goal = atan2(goal.y(), goal.x());
-  if (M_PI / 4.0 < fabs(angle_to_goal))
+  if (M_PI / 4.0 < fabs(angle_to_goal) && goal.segment(0, 2).norm() > dist_to_goal_th_ * 10) // angle to goal is large and far from goal
     use_speed_cost_ = true;
   else{
     use_speed_cost_ = false;
@@ -144,7 +145,7 @@ bool DWAPlanner::makePlan(const geometry_msgs::PoseStamped &start_pose, const ge
 
   if (dist_to_goal_th_ < goal.segment(0, 2).norm()) // too far
   {
-    best_traj.first = dwa_planning(goal, trajectories);
+    best_traj.first = dwa_planning(goal, trajectories, available_traj_count);
     cmd_vel.linear.x = best_traj.first.front().velocity_;
     cmd_vel.angular.z = best_traj.first.front().yawrate_;
 
@@ -159,6 +160,11 @@ bool DWAPlanner::makePlan(const geometry_msgs::PoseStamped &start_pose, const ge
   visualize_trajectories(trajectories, candidate_trajectories_pub_);
   visualize_footprints(best_traj.first, predict_footprints_pub_);
 
+  if(available_traj_count < 1){
+    ROS_ERROR("No trajectories generated.");
+    return false;
+  }
+
   // return cmd_vel;
   dwa_cmd_vel_.linear.x = cmd_vel.linear.x;
   dwa_cmd_vel_.angular.z = cmd_vel.angular.z;
@@ -168,10 +174,10 @@ bool DWAPlanner::makePlan(const geometry_msgs::PoseStamped &start_pose, const ge
 
 
 std::vector<DWAPlanner::State>
-DWAPlanner::dwa_planning(const Eigen::Vector3d &goal, std::vector<std::pair<std::vector<State>, bool>> &trajectories)
+DWAPlanner::dwa_planning(const Eigen::Vector3d &goal, std::vector<std::pair<std::vector<State>, bool>> &trajectories, int& out_available_traj_count)
 {
   Cost min_cost(0.0, 0.0, 0.0, 0.0, 1e6);
-  const Window dynamic_window = calc_dynamic_window();
+  const Window dynamic_window = calc_dynamic_window(true);
   ROS_INFO("goal in robot frame: (%.2f[m], %.2f[m], %.2f[radian])", goal.x(), goal.y(), goal.z());
   std::vector<State> best_traj;
   best_traj.resize(sim_time_samples_); // 每条轨迹的采样点数
@@ -210,7 +216,7 @@ DWAPlanner::dwa_planning(const Eigen::Vector3d &goal, std::vector<std::pair<std:
       trajectories.push_back(traj);
     }
 
-    if (dynamic_window.min_yawrate_ < 0.0 && 0.0 < dynamic_window.max_yawrate_) // strgith forward
+    if (dynamic_window.min_steer_angle_ < 0.0 && 0.0 < dynamic_window.max_steer_angle_) // add strgith forward
     {
       std::pair<std::vector<State>, bool> traj;
       traj.first = generate_trajectory(v, 0.0, true);
@@ -255,6 +261,7 @@ DWAPlanner::dwa_planning(const Eigen::Vector3d &goal, std::vector<std::pair<std:
       }
     }
   }
+  out_available_traj_count = available_traj_count;
 
   ROS_INFO("====best trajectory param ===");
   ROS_INFO_STREAM("(v, y) = (" << best_traj.front().velocity_ << ", " << best_traj.front().yawrate_ << ")");
@@ -303,7 +310,6 @@ void DWAPlanner::normalize_costs(std::vector<DWAPlanner::Cost> &costs)
   }
 }
 
-
 bool DWAPlanner::check_collision(const std::vector<State> &traj)
 {
   for (const auto &state : traj)
@@ -315,11 +321,10 @@ bool DWAPlanner::check_collision(const std::vector<State> &traj)
         return true;
     }
   }
-
   return false;
 }
 
-DWAPlanner::Window DWAPlanner::calc_dynamic_window(void)
+DWAPlanner::Window DWAPlanner::calc_dynamic_window(bool use_printlog=false)
 {
   Window window;
   window.min_velocity_ = std::max((current_cmd_vel_.linear.x - max_deceleration_ * sim_period_), min_velocity_);
@@ -329,14 +334,15 @@ DWAPlanner::Window DWAPlanner::calc_dynamic_window(void)
   window.min_steer_angle_ = -max_steer_angle_;
   window.max_steer_angle_ = max_steer_angle_;
 
-  ROS_INFO("Dynamic Window:");
-  ROS_INFO_STREAM("\tcurent_cm_vel:" << current_cmd_vel_.linear.x << ", " << current_cmd_vel_.angular.z);
-  ROS_INFO_STREAM("\tVelocity:");
-  ROS_INFO_STREAM("\t\tmax: " << window.max_velocity_);
-  ROS_INFO_STREAM("\t\tmin: " << window.min_velocity_);
-  ROS_INFO_STREAM("\tSteer Angle:");
-  ROS_INFO_STREAM("\t\tmax: " << window.max_steer_angle_);
-  ROS_INFO_STREAM("\t\tmin: " << window.min_steer_angle_);
+  if (use_printlog)
+    ROS_INFO("Dynamic Window:");
+    ROS_INFO_STREAM("\tcurent_cm_vel:" << current_cmd_vel_.linear.x << ", " << current_cmd_vel_.angular.z);
+    ROS_INFO_STREAM("\tVelocity:");
+    ROS_INFO_STREAM("\t\tmax: " << window.max_velocity_);
+    ROS_INFO_STREAM("\t\tmin: " << window.min_velocity_);
+    ROS_INFO_STREAM("\tSteer Angle:");
+    ROS_INFO_STREAM("\t\tmax: " << window.max_steer_angle_);
+    ROS_INFO_STREAM("\t\tmin: " << window.min_steer_angle_);
   return window;
 }
 

@@ -159,7 +159,7 @@ public:
    * @brief Calculate dynamic window
    * @return The dynamic window
    */
-  Window calc_dynamic_window(void);
+  Window calc_dynamic_window(bool use_printlog);
 
   /**
    * @brief Calculate obstacle cost
@@ -324,7 +324,7 @@ public:
    * @param obs_list Obstacle's position
    */
   std::vector<State>
-  dwa_planning(const Eigen::Vector3d &goal, std::vector<std::pair<std::vector<State>, bool>> &trajectories);
+  dwa_planning(const Eigen::Vector3d &goal, std::vector<std::pair<std::vector<State>, bool>> &trajectories, int& out_available_traj_count);
 
   void publishRobotMarker(const std_msgs::Header& header, const geometry_msgs::Pose& pose);
 
