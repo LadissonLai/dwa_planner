@@ -26,10 +26,10 @@ ANGLE_TO_GOAL_TH: pi # [rad]
 # Target Parameters
 TARGET_VELOCITY: 2.0 # [m/s]
 STEER_ANGLE_SAMPLES: 10
-VELOCITY_SAMPLES: 5
+VELOCITY_SAMPLES: 10
 GOAL_THRESHOLD: 0.1           # [m]
 
-PREDICT_TIME: 3.0     # [s]
+PREDICT_TIME: 2.0     # [s]
 SIM_TIME_SAMPLES: 10 # collision check samples
 
 ANGLE_RESOLUTION: 0.087 # [rad] obstacle angle resolution from costmap

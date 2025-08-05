@@ -515,6 +515,7 @@ protected:
   std_msgs::Bool has_finished_;
 
   tf::TransformListener listener_;
+  nav_msgs::OccupancyGrid costmap_;
 
   // ackerman parameters
   int steer_angle_samples_;

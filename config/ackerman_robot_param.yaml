@@ -20,12 +20,12 @@ ROBOT_LENGTH: 0.4         # [m], Length of the robot
 WHEELBASE: 0.3           # [m], Distance between the front and rear wheels
 FRONT_OVERHANG: 0.0       # [m], Distance from the front wheel to the front of the robot
 REAR_OVERHANG: 0.0        # [m], Distance from the rear
-MAX_STEERING_ANGLE: 0.5   # [rad], Maximum steering angle of the robot, 0.5 radians ~=28 degrees
+MAX_STEER_ANGLE: 0.5   # [rad], Maximum steering angle of the robot, 0.5 radians ~=28 degrees
 FOOTPRINT_PADDING: 0.0 # [m], If localmap contains padding, you should set this param to 0.0
 
 
 # Robot Configuration Parameters
 MAX_VELOCITY: 2.0         # [m/s]
 MIN_VELOCITY: 0.0         # [m/s]
-MAX_ACCELERATION: 1.0     # [m/s^2]
-MAX_DECELERATION: 2.0     # [m/s^2]
+MAX_ACCELERATION: 5.0     # [m/s^2]
+MAX_DECELERATION: 10.0     # [m/s^2]

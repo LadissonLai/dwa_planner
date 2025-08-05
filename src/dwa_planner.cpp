@@ -120,6 +120,7 @@ void DWAPlanner::local_map_callback(const nav_msgs::OccupancyGridConstPtr &msg)
     create_obs_list(*msg);
   local_map_not_subscribe_count_ = 0;
   local_map_updated_ = true;
+  costmap_ = *msg;
 }
 
 void DWAPlanner::odom_callback(const nav_msgs::OdometryConstPtr &msg)
@@ -216,7 +217,7 @@ DWAPlanner::dwa_planning(const Eigen::Vector3d &goal, std::vector<std::pair<std:
   const double velocity_resolution =
       std::max((dynamic_window.max_velocity_ - dynamic_window.min_velocity_) / (velocity_samples_ - 1), DBL_EPSILON);
   const double steer_resolution =
-      std::max((dynamic_window.max_yawrate_ - dynamic_window.min_yawrate_) / (steer_angle_samples_ - 1), DBL_EPSILON);
+      std::max((dynamic_window.max_steer_angle_ - dynamic_window.min_steer_angle_) / (steer_angle_samples_ - 1), DBL_EPSILON);
 
   int available_traj_count = 0;
   for (int i = 0; i < velocity_samples_; i++)
@@ -406,6 +407,8 @@ geometry_msgs::Twist DWAPlanner::calc_cmd_vel(void)
   std::vector<std::pair<std::vector<State>, bool>> trajectories;
   const size_t trajectories_size = velocity_samples_ * (steer_angle_samples_ + 1);
   trajectories.reserve(trajectories_size);
+
+  create_obs_list(costmap_);
 
   geometry_msgs::PoseStamped goal_;
   try
