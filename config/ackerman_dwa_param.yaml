@@ -16,8 +16,8 @@ OBS_RANGE: 2.5          # [m]
 # real needed params
 # Target Parameters
 TARGET_VELOCITY: 0.5 # [m/s]
-STEER_ANGLE_SAMPLES: 20
-VELOCITY_SAMPLES: 10
+STEER_ANGLE_SAMPLES: 10
+VELOCITY_SAMPLES: 5
 GOAL_THRESHOLD: 0.1           # [m]
 
 PREDICT_TIME: 2.0     # [s]

@@ -4,6 +4,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <chrono>
 
 #include "dwa_planner/dwa_planner.h"
 
@@ -116,6 +117,8 @@ bool DWAPlanner::makePlan(const geometry_msgs::PoseStamped &start_pose, const ge
     ROS_ERROR("mvp dwa Costmap is not initialized. Please call initialize() before makePlan().");
     return false;
   }
+  // 开始计时
+  auto start_time = std::chrono::high_resolution_clock::now();
   costmap_initialized_ = false;
   geometry_msgs::Twist cmd_vel;
   std::pair<std::vector<State>, bool> best_traj;
@@ -169,6 +172,11 @@ bool DWAPlanner::makePlan(const geometry_msgs::PoseStamped &start_pose, const ge
   dwa_cmd_vel_.linear.x = cmd_vel.linear.x;
   dwa_cmd_vel_.angular.z = cmd_vel.angular.z;
   tranform_trajectory_to_path(best_traj.first);
+  // 结束计时并输出
+  auto end_time = std::chrono::high_resolution_clock::now();
+  auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
+  double duration_ms = duration.count() / 1000.0;
+  ROS_INFO_STREAM("\033[32mDWA Planning Time: " << duration_ms << " ms\033[0m");
   return true;
 }
 
