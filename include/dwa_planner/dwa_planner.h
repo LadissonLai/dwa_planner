@@ -146,11 +146,6 @@ public:
   };
 
   /**
-   * @brief Execute local path planning
-   */
-  void process(void);
-
-  /**
    * @brief Load parameters
    */
   void load_params(void);
@@ -159,46 +154,6 @@ public:
    * @brief Print parameters
    */
   void print_params(void);
-
-  /**
-   * @brief A callback to hanldle buffering local goal messages
-   */
-  void goal_callback(const geometry_msgs::PoseStampedConstPtr &msg);
-
-  /**
-   * @brief A callback to hanldle buffering scan messages
-   */
-  void scan_callback(const sensor_msgs::LaserScanConstPtr &msg);
-
-  /**
-   * @brief A callback to hanldle buffering local map messages
-   */
-  void local_map_callback(const nav_msgs::OccupancyGridConstPtr &msg);
-
-  /**
-   * @brief A callback to hanldle buffering odometry messages
-   */
-  void odom_callback(const nav_msgs::OdometryConstPtr &msg);
-
-  /**
-   * @brief A callback to hanldle buffering target velocity messages
-   */
-  void target_velocity_callback(const geometry_msgs::TwistConstPtr &msg);
-
-  /**
-   * @brief A calllback to handle buffering footprint messages
-   */
-  void footprint_callback(const geometry_msgs::PolygonStampedPtr &msg);
-
-  /**
-   * @brief A callback to handle buffering distance to goal threshold messages
-   */
-  void dist_to_goal_th_callback(const std_msgs::Float64ConstPtr &msg);
-
-  /**
-   * @brief A callback to handle buffering edge on global path messages
-   */
-  void edge_on_global_path_callback(const nav_msgs::PathConstPtr &msg);
 
   /**
    * @brief Calculate dynamic window
@@ -237,20 +192,6 @@ public:
   float calc_speed_cost(const std::vector<State> &traj);
 
   /**
-   * @brief Calculate the path cost
-   * @param traj The estimated trajectory
-   * @return The path cost
-   */
-  float calc_path_cost(const std::vector<State> &traj);
-
-  /**
-   * @brief Calculate the distance of current pose to global path
-   * @param state The robot state
-   * @return The distance of current pose to global path
-   */
-  float calc_dist_to_path(const State state);
-
-  /**
    * @brief Simulate the robot motion
    * @param state The start state of robot
    * @param velocity The velocity of robot
@@ -265,20 +206,6 @@ public:
   void create_obs_list(const nav_msgs::OccupancyGrid &map);
 
   /**
-   * @brief Get obstacle list from laser scan
-   * @param scan The laser scan
-   */
-  void create_obs_list(const sensor_msgs::LaserScan &scan);
-
-  /**
-   * @brief Calculate the distance from robot footprint to the nearest obstacle
-   * @param obstacle The position of obstacle
-   * @param state The robot state
-   * @return The distance from robot footprint to the nearest obstacle
-   */
-  float calc_dist_from_robot(const geometry_msgs::Point &obstacle, const State &state);
-
-  /**
    * @brief Calculate the distance from robot footprint to the nearest obstacle
    * @param obstacle The position of obstacle
    * @param state The robot state
@@ -286,13 +213,6 @@ public:
    * @return The distance from robot footprint to the nearest obstacle
    */
   float calc_dist_from_robot(const geometry_msgs::Point &obstacle, const State &state, bool use_ackerman);
-
-  /**
-   * @brief Move the robot footprint to the target pose
-   * @param target_pose The target pose
-   * @return The moved footprint
-   */
-  geometry_msgs::PolygonStamped move_footprint(const State &target_pose);
 
 
   /**
@@ -334,26 +254,11 @@ public:
   /**
    * @brief Generate trajectory
    * @param velocity The velocity of robot
-   * @param yawrate The angular velocity of robot
-   * @return The generated trajectory
-   */
-  std::vector<State> generate_trajectory(const double velocity, const double yawrate);
-
-  /**
-   * @brief Generate trajectory
-   * @param velocity The velocity of robot
    * @param steer_angle The steering angle of ackerman robot
    * @return The generated trajectory
    */
   std::vector<State> generate_trajectory(const double velocity, const double steer_angle, bool use_ackerman);
 
-  /**
-   * @brief Generate trajectory
-   * @param yawrate The angular velocity of robot
-   * @param goal The pose of goal
-   * @return The generated trajectory
-   */
-  std::vector<State> generate_trajectory(const double yawrate, const Eigen::Vector3d &goal);
 
   /**
    * @brief Evaluate trajectory
@@ -362,25 +267,6 @@ public:
    * @return The cost of trajectory
    */
   Cost evaluate_trajectory(const std::vector<State> &trajectory, const Eigen::Vector3d &goal);
-
-  /**
-   * @brief Check if the robot can move
-   * @return True if the robot can move
-   */
-  bool can_move(void);
-
-  /**
-   * @brief Calculate the command velocity
-   * @return The command velocity
-   */
-  geometry_msgs::Twist calc_cmd_vel(void);
-
-  /**
-   * @brief Check if the robot can adjust the direction
-   * @param goal The pose of goal
-   * @return True if the robot can adjust the direction
-   */
-  bool can_adjust_robot_direction(const Eigen::Vector3d &goal);
 
   /**
    * @brief Check if the robot has collided
@@ -443,58 +329,37 @@ public:
   void publishRobotMarker(const std_msgs::Header& header, const geometry_msgs::Pose& pose);
 
   // interface 
-  void initialize(const nav_msgs::OccupancyGrid& costmap);
+  void initialize(const nav_msgs::OccupancyGrid& costmap, const geometry_msgs::Twist& cur_vel);
   bool makePlan(const geometry_msgs::PoseStamped& start_pose, const geometry_msgs::PoseStamped& goal_pose);
   const nav_msgs::Path& getPath() const
   {
     return path_;
   }
-
+  geometry_msgs::Twist getDWA_cmd_vel() const{
+    return dwa_cmd_vel_;
+  }
+  
 protected:
-  std::string global_frame_;
+
   std::string robot_frame_;
-  double hz_;
   
-  
-  double max_yawrate_;
-  double min_yawrate_;
-  double max_in_place_yawrate_;
-  double min_in_place_yawrate_;
-  
-  double max_d_yawrate_;
   double sim_period_;
   double angle_resolution_;
   
-  double sleep_time_after_finish_;
   double obs_cost_gain_;
   double to_goal_cost_gain_;
   double to_goal_orientation_cost_gain_;
   double speed_cost_gain_;
-  double path_cost_gain_;
   
-  double turn_direction_th_;
-  double angle_to_goal_th_;
-  double sim_direction_;
-  double slow_velocity_th_;
   double obs_range_;
   double robot_radius_;
   double footprint_padding_;
   double v_path_width_;
-  bool use_footprint_;
-  bool use_scan_as_input_;
-  bool use_path_cost_;
-  bool use_speed_cost_;
-  bool odom_updated_;
-  bool local_map_updated_;
-  bool scan_updated_;
-  bool has_reached_;
 
-  int yawrate_samples_;
+  bool use_speed_cost_;
+
   int sim_time_samples_;
-  int subscribe_count_th_;
-  int odom_not_subscribe_count_;
-  int local_map_not_subscribe_count_;
-  int scan_not_subscribe_count_;
+
 
   ros::NodeHandle nh_;
   ros::NodeHandle local_nh_;
@@ -502,25 +367,13 @@ protected:
   ros::Publisher candidate_trajectories_pub_;
   ros::Publisher selected_trajectory_pub_;
   ros::Publisher predict_footprints_pub_;
-  ros::Publisher finish_flag_pub_;
-  ros::Subscriber dist_to_goal_th_sub_;
-  ros::Subscriber edge_on_global_path_sub_;
-  ros::Subscriber footprint_sub_;
-  ros::Subscriber goal_sub_;
-  ros::Subscriber local_map_sub_;
-  ros::Subscriber odom_sub_;
-  ros::Subscriber scan_sub_;
-  ros::Subscriber target_velocity_sub_;
+
   ros::Publisher robot_polygon_marker_pub_;
   ros::Publisher obstacle_points_pub_;
 
   geometry_msgs::Twist current_cmd_vel_;
-  std::optional<geometry_msgs::PoseStamped> goal_msg_;
-  geometry_msgs::PoseArray obs_list_;
-  std::optional<geometry_msgs::PolygonStamped> footprint_;
-  std::optional<nav_msgs::Path> edge_points_on_path_;
 
-  std_msgs::Bool has_finished_;
+  geometry_msgs::PoseArray obs_list_;
 
   tf::TransformListener listener_;
 
@@ -545,6 +398,8 @@ protected:
   nav_msgs::Path path_;
   nav_msgs::OccupancyGrid costmap_;
   bool costmap_initialized_{false};
+  void tranform_trajectory_to_path(const std::vector<State> &trajectory);
+  geometry_msgs::Twist dwa_cmd_vel_;
 };
 
 #endif  // DWA_PLANNER_DWA_PLANNER_H

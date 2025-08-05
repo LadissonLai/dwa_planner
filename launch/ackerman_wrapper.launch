@@ -21,8 +21,7 @@
   <include file="$(find turtlebot3_navigation)/launch/amcl.launch"/>
 
   <!-- dwa -->
-  <include file="$(find dwa_planner)/launch/ackerman_local_planner.launch">
-    <arg name="use_scan_as_input" value="false"/>
+  <include file="$(find dwa_planner)/launch/ackerman_dwa_wrapper.launch">
     <arg name="v_path_width" value="0.02"/>
   </include>
 

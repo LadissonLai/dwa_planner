@@ -1,0 +1,35 @@
+<?xml version="1.0"?>
+
+<launch>
+    <arg name="ns" default="local_planner"/>
+
+    <!-- param -->
+    <arg name="dwa_param" default="$(find dwa_planner)/config/ackerman_dwa_param.yaml"/>
+    <arg name="robot_param" default="$(find dwa_planner)/config/ackerman_robot_param.yaml"/>
+
+    <arg name="v_path_width" default="0.05"/>
+
+    <!-- topic name -->
+    <!-- published topics -->
+    <arg name="cmd_vel" default="/cmd_vel"/>
+    <!-- subscribed topics -->
+    <arg name="local_map" default="/local_map"/>
+    <arg name="local_goal" default="/move_base_simple/goal"/>
+    <arg name="odom" default="/odom"/>
+
+    <!-- run dwa_planner node -->
+    <node pkg="dwa_planner" type="dwa_wrapper" name="dwa_wrapper" ns="$(arg ns)" output="screen">
+        <!-- param -->
+        <rosparam command="load" file="$(arg dwa_param)"/>
+        <rosparam command="load" file="$(arg robot_param)"/>
+
+        <param name="V_PATH_WIDTH" value="$(arg v_path_width)"/>
+        <!-- topic name -->
+        <!-- published topics -->
+        <remap from="/cmd_vel" to="$(arg cmd_vel)"/>
+        <!-- subscribed topics -->
+        <remap from="/local_map" to="$(arg local_map)"/>
+        <remap from="/move_base_simple/goal" to="$(arg local_goal)"/>
+        <remap from="/odom" to="$(arg odom)"/>
+    </node>
+</launch>

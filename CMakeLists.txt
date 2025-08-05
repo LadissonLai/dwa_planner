@@ -33,8 +33,9 @@ add_library(dwa_planner_lib
   src/parameters.cpp
 )
 add_dependencies(dwa_planner_lib ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
-add_executable(dwa_planner src/dwa_planner_node.cpp)
-target_link_libraries(dwa_planner
+add_executable(dwa_wrapper src/dwa_wrapper.cpp)
+
+target_link_libraries(dwa_wrapper
   ${catkin_LIBRARIES}
   dwa_planner_lib
 )
