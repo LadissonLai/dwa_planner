@@ -226,7 +226,7 @@ DWAPlanner::dwa_planning(const Eigen::Vector3d &goal, std::vector<std::pair<std:
     for (int j = 0; j < steer_angle_samples_; j++)
     {
       std::pair<std::vector<State>, bool> traj;
-      double y = dynamic_window.min_yawrate_ + steer_resolution * j;
+      double y = dynamic_window.min_steer_angle_ + steer_resolution * j;
       // if (v < slow_velocity_th_)
       //   y = y > 0 ? std::max(y, min_yawrate_) : std::min(y, -min_yawrate_);
       traj.first = generate_trajectory(v, y, true);
